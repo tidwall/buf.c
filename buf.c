@@ -65,6 +65,65 @@ void buf_clear(struct buf *buf) {
     memset(buf, 0, sizeof(struct buf));
 }
 
+bool buf_append_uvarint(struct buf *buf, uint64_t x) {
+    size_t i = buf->len;
+    // ensure there's at least 11 bytes available
+    if (buf->cap - buf->len < 11) {
+        if (!buf_append(buf, (char[11]){}, 11)) {
+            return false;
+        }
+    }
+    // write the bytes
+    while (x >= 0x80) {
+        buf->data[i] = x | 0x80;
+        x >>= 7;
+        i++;
+    }
+    buf->data[i] = x;
+    buf->data[i+1] = '\0';
+    buf->len = i + 1;
+    return true;
+}
+
+int buf_uvarint(struct buf *buf, size_t offset, uint64_t *x) {
+    *x = 0;
+    uint64_t s = 0;
+    for (int i = 0; offset+i < buf->len; i++) {
+        uint64_t b = buf->data[offset+i];
+        if (b < 0x80) {
+            if (i > 9 || (i == 9 && b > 1)) {
+                // overflow
+                *x = 0;
+                return -(i + 1);
+            }
+            *x |= b << s;
+            return i + 1;
+        }
+        *x |= (b&0x7f) << s;
+        s += 7;
+    }
+    *x = 0;
+    return 0;
+}
+
+bool buf_append_varint(struct buf *buf, int64_t x) {
+    uint64_t ux = (uint64_t)x << 1;
+    if (x < 0) {
+        ux = ~ux;
+    }
+    return buf_append_uvarint(buf, ux);
+}
+
+int buf_varint(struct buf *buf, size_t offset, int64_t *x) {
+    uint64_t ux;
+    int n = buf_uvarint(buf, offset, &ux);
+    *x = (int64_t)(ux >> 1);
+    if ((ux&1) != 0) {
+        *x = ~*x;
+    }
+    return n;
+}
+
 //==============================================================================
 // TESTS AND BENCHMARKS
 // $ cc -DBUF_TEST buf.c && ./a.out              # run tests
@@ -102,6 +161,17 @@ static void xfree(void *ptr) {
         total_allocs--;
     }
 }
+
+uint64_t rand_uint() {
+     return (((uint64_t)rand()<<33) | 
+            ((uint64_t)rand()<<1) | 
+            ((uint64_t)rand()<<0)) >> (rand()&63);
+}
+
+int64_t rand_int() {
+     return (int64_t)(rand_uint()) * ((rand()&1)?1:-1);
+}
+
 
 static void all() {
     static int run_counter = 0;
@@ -151,6 +221,44 @@ again:
     buf_clear(&buf);
     bfree(bytes);
 
+    // write some uvarints
+    int n = 1000;
+    uint64_t *uints;
+    while (!(uints = bmalloc(n*sizeof(uint64_t)))){}
+    for (int i = 0; i < n; i++) {
+        uints[i] = rand_uint();
+        while (!buf_append_uvarint(&buf, uints[i])){}
+    }
+    size_t offset = 0;
+    for (int i = 0; i < n; i++) {
+        uint64_t x;
+        int nn = buf_uvarint(&buf, offset, &x);
+        assert(nn > 0);
+        assert(x == uints[i]);
+        offset += nn;
+    }
+    buf_clear(&buf);
+    bfree(uints);
+
+
+    // write some varints
+    int64_t *ints;
+    while (!(ints = bmalloc(n*sizeof(int64_t)))){}
+    for (int i = 0; i < n; i++) {
+        ints[i] = rand_int();
+        while (!buf_append_varint(&buf, ints[i])){}
+    }
+    offset = 0;
+    for (int i = 0; i < n; i++) {
+        int64_t x;
+        int nn = buf_varint(&buf, offset, &x);
+        assert(nn > 0);
+        assert(x == ints[i]);
+        offset += nn;
+    }
+    buf_clear(&buf);
+    bfree(ints);
+    
     if (total_allocs != 0) {
         fprintf(stderr, "total_allocs: expected 0, got %lu\n", total_allocs);
         exit(1);
