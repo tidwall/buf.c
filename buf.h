@@ -16,9 +16,4 @@ bool buf_append_byte(struct buf *buf, char ch);
 void buf_clear(struct buf *buf);
 void buf_set_allocator(void *(malloc)(size_t), void (*free)(void*));
 
-bool buf_append_uvarint(struct buf *buf, uint64_t x);
-int buf_uvarint(struct buf *buf, size_t offset, uint64_t *x);
-bool buf_append_varint(struct buf *buf, int64_t x);
-int buf_varint(struct buf *buf, size_t offset, int64_t *x);
-
 #endif
