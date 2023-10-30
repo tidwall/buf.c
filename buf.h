@@ -6,6 +6,11 @@
 #include <sys/types.h>
 #include <stdbool.h>
 
+#if defined(_MSC_VER)
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+#endif
+
 struct buf {
     char *data;
     size_t len, cap;
