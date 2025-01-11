@@ -40,8 +40,10 @@ bool buf_append(struct buf *buf, const char *data, ssize_t len) {
         if (!data) {
             return false;
         }
-        memcpy(data, buf->data, buf->len);
-        bfree(buf->data);
+        if (buf->data) {
+            memcpy(data, buf->data, buf->len);
+            bfree(buf->data);
+        }
         buf->data = data;
         buf->cap = cap;
     }
